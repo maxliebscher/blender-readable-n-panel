@@ -1,0 +1,5 @@
+*.pdb
+*.zip
+local-builds/
+verification-extract/
+

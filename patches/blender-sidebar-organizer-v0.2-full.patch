@@ -1,0 +1,1271 @@
+diff --git a/scripts/startup/bl_ui/space_userpref.py b/scripts/startup/bl_ui/space_userpref.py
+index 8c222f39..563904d5 100644
+--- a/scripts/startup/bl_ui/space_userpref.py
++++ b/scripts/startup/bl_ui/space_userpref.py
+@@ -6,9 +6,15 @@ import bpy
+ from bpy.types import (
+     Header,
+     Menu,
++    Operator,
+     Panel,
+     UIList,
+ )
++from bpy.props import (
++    BoolProperty,
++    IntProperty,
++    StringProperty,
++)
+ from bpy.app.translations import (
+     contexts as i18n_contexts,
+     pgettext_iface as iface_,
+@@ -329,6 +335,165 @@ class USERPREF_PT_interface_editors(InterfacePanel, CenterAlignMixIn, Panel):
+         col.prop(view, "factor_display_type")
+ 
+ 
++def _sidebar_items(value):
++    return [item.strip() for item in value.split(';') if item.strip()]
++
++
++def _sidebar_set_membership(value, item, enabled):
++    items = [entry for entry in _sidebar_items(value) if entry != item]
++    if enabled:
++        items.append(item)
++    return ';'.join(items)
++
++
++def _sidebar_mapping(value):
++    result = {}
++    for item in _sidebar_items(value):
++        key, separator, mapped = item.partition('=')
++        if separator and key.strip():
++            result[key.strip()] = mapped.strip()
++    return result
++
++
++def _sidebar_set_mapping(value, key, mapped):
++    values = _sidebar_mapping(value)
++    if mapped:
++        values[key] = mapped
++    else:
++        values.pop(key, None)
++    return ';'.join(f"{item}={mapped_value}" for item, mapped_value in values.items())
++
++
++class PREFERENCES_OT_sidebar_category_edit(Operator):
++    bl_idname = "preferences.sidebar_category_edit"
++    bl_label = "Organize Sidebar Category"
++    bl_description = "Edit the selected sidebar category without changing its add-on identifier"
++    bl_options = {'INTERNAL'}
++
++    category: StringProperty(options={'HIDDEN'})
++    alias: StringProperty(name="Display Name")
++    group: StringProperty(name="Group")
++    color: IntProperty(name="Color Tag", min=0, max=8)
++    favorite: BoolProperty(name="Favorite")
++    hidden: BoolProperty(name="Hidden")
++
++    def invoke(self, context, _event):
++        system = context.preferences.system
++        self.alias = _sidebar_mapping(system.panel_tabs_aliases).get(self.category, "")
++        self.group = _sidebar_mapping(system.panel_tabs_groups).get(self.category, "")
++        self.color = int(_sidebar_mapping(system.panel_tabs_colors).get(self.category, "0") or 0)
++        self.favorite = self.category in _sidebar_items(system.panel_tabs_favorites)
++        self.hidden = self.category in _sidebar_items(system.panel_tabs_hidden)
++        return context.window_manager.invoke_props_dialog(self, width=360)
++
++    def draw(self, _context):
++        layout = self.layout
++        layout.label(text=f"Original category: {self.category}", icon='INFO')
++        layout.prop(self, "alias")
++        layout.prop(self, "group")
++        layout.prop(self, "color")
++        row = layout.row(align=True)
++        row.prop(self, "favorite")
++        row.prop(self, "hidden")
++
++    def execute(self, context):
++        if any(character in value for value in (self.alias, self.group) for character in ";="):
++            self.report({'ERROR'}, "Display name and group cannot contain ';' or '='")
++            return {'CANCELLED'}
++
++        system = context.preferences.system
++        system.panel_tabs_aliases = _sidebar_set_mapping(
++            system.panel_tabs_aliases, self.category, self.alias.strip())
++        system.panel_tabs_groups = _sidebar_set_mapping(
++            system.panel_tabs_groups, self.category, self.group.strip())
++        system.panel_tabs_colors = _sidebar_set_mapping(
++            system.panel_tabs_colors, self.category, str(self.color) if self.color else "")
++        system.panel_tabs_favorites = _sidebar_set_membership(
++            system.panel_tabs_favorites, self.category, self.favorite)
++        system.panel_tabs_hidden = _sidebar_set_membership(
++            system.panel_tabs_hidden, self.category, self.hidden)
++        return {'FINISHED'}
++
++
++class PREFERENCES_OT_sidebar_categories_reset(Operator):
++    bl_idname = "preferences.sidebar_categories_reset"
++    bl_label = "Reset Sidebar Organization"
++    bl_description = "Clear aliases, groups, colors, favorites, hidden categories, and custom order"
++    bl_options = {'INTERNAL'}
++
++    def invoke(self, context, _event):
++        return context.window_manager.invoke_confirm(self, _event)
++
++    def execute(self, context):
++        system = context.preferences.system
++        system.panel_tabs_favorites = ""
++        system.panel_tabs_hidden = ""
++        system.panel_tabs_custom_order = ""
++        system.panel_tabs_aliases = ""
++        system.panel_tabs_groups = ""
++        system.panel_tabs_colors = ""
++        system.panel_tabs_filter = ""
++        return {'FINISHED'}
++
++
++class USERPREF_PT_interface_sidebar_categories(InterfacePanel, CenterAlignMixIn, Panel):
++    bl_label = "Sidebar Categories (Experimental)"
++    bl_parent_id = "USERPREF_PT_interface_editors"
++    bl_options = {'DEFAULT_CLOSED'}
++
++    def draw_centered(self, context, layout):
++        system = context.preferences.system
++
++        col = layout.column()
++        col.prop(system, "show_panel_tabs_horizontal_text", text="Readable Labels")
++
++        settings = col.column()
++        settings.active = system.show_panel_tabs_horizontal_text
++        settings.prop(system, "panel_tabs_width_mode", text="Width")
++        if system.panel_tabs_width_mode == 'FIXED':
++            settings.prop(system, "panel_tabs_fixed_width", text="Fixed Width")
++        else:
++            row = settings.row(align=True)
++            row.prop(system, "panel_tabs_auto_min_width", text="Minimum")
++            row.prop(system, "panel_tabs_auto_max_width", text="Maximum")
++        settings.prop(system, "panel_tabs_row_scale", text="Row Height")
++        settings.prop(system, "panel_tabs_sort_mode", text="Sort")
++
++        settings.separator()
++        settings.label(text="Organization")
++        row = settings.row(align=True)
++        row.prop(system, "panel_tabs_favorites_first")
++        row.prop(system, "panel_tabs_group_headers")
++        row.prop(system, "panel_tabs_color_tags")
++        settings.prop(system, "panel_tabs_show_search", text="Show Search Field")
++        settings.prop(system, "panel_tabs_filter", text="Live Filter")
++
++        settings.separator()
++        settings.label(text="Right-click a sidebar category to rename, group, color,", icon='INFO')
++        settings.label(text="favorite, or hide it without changing the add-on.")
++        settings.operator("preferences.sidebar_categories_reset", icon='LOOP_BACK')
++
++
++class USERPREF_PT_interface_sidebar_categories_advanced(InterfacePanel, CenterAlignMixIn, Panel):
++    bl_label = "Advanced Sidebar Category Data"
++    bl_parent_id = "USERPREF_PT_interface_sidebar_categories"
++    bl_options = {'DEFAULT_CLOSED'}
++
++    def draw_centered(self, context, layout):
++        system = context.preferences.system
++        settings = layout.column()
++        settings.label(text="Use semicolons between category identifiers.", icon='INFO')
++        settings.prop(system, "panel_tabs_favorites", text="Favorites")
++        settings.prop(system, "panel_tabs_hidden", text="Hidden")
++        settings.prop(system, "panel_tabs_custom_order", text="Custom Order")
++
++        settings.separator()
++        settings.label(text="Mappings use Category=Value;Category=Value")
++        settings.prop(system, "panel_tabs_aliases", text="Aliases")
++        settings.prop(system, "panel_tabs_groups", text="Groups")
++        settings.prop(system, "panel_tabs_colors", text="Colors (1-8)")
++
++
+ class USERPREF_PT_interface_temporary_windows(InterfacePanel, CenterAlignMixIn, Panel):
+     bl_label = "Temporary Editors"
+     bl_parent_id = "USERPREF_PT_interface_editors"
+@@ -3063,6 +3228,8 @@ class USERPREF_PT_experimental_tweaks(ExperimentalPanel, Panel):
+ # Order of registration defines order in UI,
+ # so dynamically generated classes are "injected" in the intended order.
+ classes = (
++    PREFERENCES_OT_sidebar_category_edit,
++    PREFERENCES_OT_sidebar_categories_reset,
+     USERPREF_PT_theme_user_interface,
+     *ThemeGenericClassGenerator.generate_panel_classes_for_wcols(),
+     USERPREF_HT_header,
+@@ -3074,6 +3241,8 @@ classes = (
+ 
+     USERPREF_PT_interface_display,
+     USERPREF_PT_interface_editors,
++    USERPREF_PT_interface_sidebar_categories,
++    USERPREF_PT_interface_sidebar_categories_advanced,
+     USERPREF_PT_interface_temporary_windows,
+     USERPREF_PT_interface_statusbar,
+     USERPREF_PT_interface_translation,
+diff --git a/source/blender/blenloader/intern/versioning_userdef.cc b/source/blender/blenloader/intern/versioning_userdef.cc
+index d3242fe4..abcdf3ce 100644
+--- a/source/blender/blenloader/intern/versioning_userdef.cc
++++ b/source/blender/blenloader/intern/versioning_userdef.cc
+@@ -1170,7 +1170,7 @@ void blo_do_versions_userdef(UserDef *userdef)
+ 
+     copy_v3_fl3(userdef->light_ambient, 0.025000, 0.025000, 0.025000);
+ 
+-    userdef->flag &= ~USER_FLAG_UNUSED_4;
++    userdef->flag &= ~USER_FLAG_PANEL_TABS_HORIZONTAL_TEXT;
+ 
+     userdef->uiflag &= ~(USER_HEADER_FROM_PREF | USER_REGISTER_ALL_USERS);
+   }
+@@ -1794,6 +1794,24 @@ void blo_do_versions_userdef(UserDef *userdef)
+   }
+ #endif
+ 
++  /* Experimental readable-sidebar organizer defaults. Keep this defensive because portable
++   * builds may load preferences written by an unpatched Blender with no values for these fields. */
++  if (userdef->panel_tabs_fixed_width <= 0.0f) {
++    userdef->panel_tabs_fixed_width = 8.0f;
++  }
++  if (userdef->panel_tabs_auto_min_width <= 0.0f) {
++    userdef->panel_tabs_auto_min_width = 5.0f;
++  }
++  if (userdef->panel_tabs_auto_max_width <= 0.0f) {
++    userdef->panel_tabs_auto_max_width = 9.0f;
++  }
++  if (userdef->panel_tabs_auto_max_width < userdef->panel_tabs_auto_min_width) {
++    userdef->panel_tabs_auto_max_width = userdef->panel_tabs_auto_min_width;
++  }
++  if (userdef->panel_tabs_row_scale <= 0.0f) {
++    userdef->panel_tabs_row_scale = 1.0f;
++  }
++
+   /**
+    * Always bump subversion in BKE_blender_version.h when adding versioning
+    * code here, and wrap it inside a USER_VERSION_ATLEAST check.
+diff --git a/source/blender/editors/include/UI_interface_c.hh b/source/blender/editors/include/UI_interface_c.hh
+index ac90fa79..5d8c7ce2 100644
+--- a/source/blender/editors/include/UI_interface_c.hh
++++ b/source/blender/editors/include/UI_interface_c.hh
+@@ -2244,6 +2244,10 @@ bool panel_can_be_pinned(const Panel *panel);
+ 
+ bool panel_category_is_visible(const ARegion *region);
+ bool panel_category_tabs_is_visible(const ARegion *region);
++/** Category gutter width in UI coordinates, including UI scaling. */
++float panel_category_tabs_width(const ARegion *region);
++/** Minimum category-only region width before UI scaling. */
++float panel_category_tabs_min_width(const ARegion *region);
+ void panel_category_add(ARegion *region, const char *name, int icon = 0);
+ PanelCategoryDyn *panel_category_find(const ARegion *region, const char *idname);
+ int panel_category_index_find(ARegion *region, const char *idname);
+diff --git a/source/blender/editors/interface/interface_context_menu.cc b/source/blender/editors/interface/interface_context_menu.cc
+index 02065a24..c22dd25e 100644
+--- a/source/blender/editors/interface/interface_context_menu.cc
++++ b/source/blender/editors/interface/interface_context_menu.cc
+@@ -1385,6 +1385,10 @@ int popup_context_menu_for_panel(bContext *C, ARegion *region, Panel *panel)
+ 
+   PopupMenu *pup = popup_menu_begin(C, IFACE_("Sidebar"), ICON_NONE);
+   Layout &layout = *popup_menu_layout(pup);
++  layout.ui_units_x_set(15.0f);
++  layout.operator_context_set(wm::OpCallContext::InvokeDefault);
++  /* Keep organizer controls usable when the sidebar itself is narrow. */
++  layout.use_property_split_set(false);
+ 
+   if (has_panel_category && panel && panel_can_be_pinned(panel)) {
+     char tmpstr[80];
+@@ -1402,9 +1406,29 @@ int popup_context_menu_for_panel(bContext *C, ARegion *region, Panel *panel)
+   }
+ 
+   PointerRNA prefs_ptr = RNA_pointer_create_discrete(nullptr, RNA_PreferencesSystem, &U);
+-  layout.prop(
++  layout.prop(&prefs_ptr,
++              "show_panel_tabs_horizontal_text",
++              UI_ITEM_NONE,
++              IFACE_("Readable Labels"),
++              ICON_NONE);
++  Layout &compact_row = layout.row(false);
++  compact_row.enabled_set((U.flag & USER_FLAG_PANEL_TABS_HORIZONTAL_TEXT) == 0);
++  compact_row.prop(
+       &prefs_ptr, "show_panel_tabs_compact", UI_ITEM_NONE, IFACE_("Compact Tabs"), ICON_NONE);
+ 
++  if (U.flag & USER_FLAG_PANEL_TABS_HORIZONTAL_TEXT) {
++    layout.separator();
++    if (region->runtime->category[0] != '\0') {
++      PointerRNA edit_ptr = layout.op("PREFERENCES_OT_sidebar_category_edit",
++                                      IFACE_("Organize Active Category..."),
++                                      ICON_GREASEPENCIL);
++      RNA_string_set(&edit_ptr, "category", region->runtime->category);
++    }
++    PointerRNA settings_ptr = layout.op(
++        "SCREEN_OT_userpref_show", IFACE_("Sidebar Category Settings..."), ICON_PREFERENCES);
++    RNA_enum_set_identifier(C, &settings_ptr, "section", "INTERFACE");
++  }
++
+   popup_menu_end(C, pup);
+   return WM_UI_HANDLER_BREAK;
+ }
+diff --git a/source/blender/editors/interface/interface_panel.cc b/source/blender/editors/interface/interface_panel.cc
+index b1d94e3c..bdf5ef2a 100644
+--- a/source/blender/editors/interface/interface_panel.cc
++++ b/source/blender/editors/interface/interface_panel.cc
+@@ -14,6 +14,8 @@
+ #include <cmath>
+ #include <cstdlib>
+ #include <cstring>
++#include <string_view>
++#include <vector>
+ 
+ #include "MEM_guardedalloc.h"
+ 
+@@ -790,11 +792,271 @@ void panel_header_buttons_end(Panel *panel)
+   }
+ }
+ 
++struct PanelCategoryViewItem {
++  PanelCategoryDyn *category;
++  int native_index;
++  std::string label;
++  std::string group;
++  bool favorite;
++  int color;
++  int custom_order;
++};
++
++static std::string_view panel_category_trim(std::string_view value)
++{
++  while (!value.empty() && ELEM(value.front(), ' ', '\t', '\n', '\r')) {
++    value.remove_prefix(1);
++  }
++  while (!value.empty() && ELEM(value.back(), ' ', '\t', '\n', '\r')) {
++    value.remove_suffix(1);
++  }
++  return value;
++}
++
++static bool panel_category_list_contains(const char *encoded, const std::string_view key)
++{
++  const std::string_view source = encoded ? encoded : "";
++  size_t start = 0;
++  while (start <= source.size()) {
++    const size_t end = source.find(';', start);
++    const std::string_view item = panel_category_trim(
++        source.substr(start, end == std::string_view::npos ? source.size() - start : end - start));
++    if (item == key) {
++      return true;
++    }
++    if (end == std::string_view::npos) {
++      break;
++    }
++    start = end + 1;
++  }
++  return false;
++}
++
++static void panel_category_list_toggle(char *encoded,
++                                       const size_t encoded_capacity,
++                                       const std::string_view key)
++{
++  const std::string_view source = encoded ? encoded : "";
++  std::vector<std::string> items;
++  bool removed = false;
++  size_t start = 0;
++  while (start <= source.size()) {
++    const size_t end = source.find(';', start);
++    const std::string_view item = panel_category_trim(
++        source.substr(start, end == std::string_view::npos ? source.size() - start : end - start));
++    if (!item.empty()) {
++      if (item == key) {
++        removed = true;
++      }
++      else {
++        items.emplace_back(item);
++      }
++    }
++    if (end == std::string_view::npos) {
++      break;
++    }
++    start = end + 1;
++  }
++  if (!removed && !key.empty()) {
++    items.emplace_back(key);
++  }
++
++  std::string result;
++  for (const std::string &item : items) {
++    if (!result.empty()) {
++      result += ';';
++    }
++    result += item;
++  }
++  BLI_strncpy(encoded, result.c_str(), encoded_capacity);
++}
++
++static int panel_category_list_index(const char *encoded, const std::string_view key)
++{
++  const std::string_view source = encoded ? encoded : "";
++  size_t start = 0;
++  int index = 0;
++  while (start <= source.size()) {
++    const size_t end = source.find(';', start);
++    const std::string_view item = panel_category_trim(
++        source.substr(start, end == std::string_view::npos ? source.size() - start : end - start));
++    if (item == key) {
++      return index;
++    }
++    if (!item.empty()) {
++      index++;
++    }
++    if (end == std::string_view::npos) {
++      break;
++    }
++    start = end + 1;
++  }
++  return -1;
++}
++
++static std::string panel_category_mapping_value(const char *encoded, const std::string_view key)
++{
++  const std::string_view source = encoded ? encoded : "";
++  size_t start = 0;
++  while (start <= source.size()) {
++    const size_t end = source.find(';', start);
++    const std::string_view item = panel_category_trim(
++        source.substr(start, end == std::string_view::npos ? source.size() - start : end - start));
++    const size_t separator = item.find('=');
++    if (separator != std::string_view::npos && panel_category_trim(item.substr(0, separator)) == key)
++    {
++      return std::string(panel_category_trim(item.substr(separator + 1)));
++    }
++    if (end == std::string_view::npos) {
++      break;
++    }
++    start = end + 1;
++  }
++  return {};
++}
++
++static bool panel_category_filter_matches(const PanelCategoryViewItem &item)
++{
++  if (U.panel_tabs_filter[0] == '\0') {
++    return true;
++  }
++  return BLI_strcasestr(item.category->idname, U.panel_tabs_filter) ||
++         BLI_strcasestr(item.label.c_str(), U.panel_tabs_filter) ||
++         BLI_strcasestr(item.group.c_str(), U.panel_tabs_filter);
++}
++
++static std::vector<PanelCategoryViewItem> panel_category_view_items(const ARegion *region,
++                                                                   const bool organize = true)
++{
++  std::vector<PanelCategoryViewItem> items;
++  const char *active = region->runtime->category;
++  int native_index = 0;
++  for (PanelCategoryDyn &category : region->runtime->panels_category) {
++    const std::string_view id = category.idname;
++    std::string alias = organize ? panel_category_mapping_value(U.panel_tabs_aliases, id) :
++                                   std::string();
++    PanelCategoryViewItem item = {&category,
++                                  native_index++,
++                                  alias.empty() ? std::string(IFACE_(category.idname)) : alias,
++                                  organize ? panel_category_mapping_value(U.panel_tabs_groups, id) :
++                                             std::string(),
++                                  organize && panel_category_list_contains(U.panel_tabs_favorites, id),
++                                  0,
++                                  organize ? panel_category_list_index(U.panel_tabs_custom_order, id) :
++                                             -1};
++    const std::string color = organize ? panel_category_mapping_value(U.panel_tabs_colors, id) :
++                                         std::string();
++    if (!color.empty()) {
++      item.color = std::clamp(atoi(color.c_str()), 0, 8);
++    }
++
++    const bool is_active = active && STREQ(active, category.idname);
++    if (organize && panel_category_list_contains(U.panel_tabs_hidden, id) && !is_active) {
++      continue;
++    }
++    if (organize && !panel_category_filter_matches(item) && !is_active) {
++      continue;
++    }
++    items.push_back(std::move(item));
++  }
++
++  if (!organize) {
++    return items;
++  }
++
++  const bool favorites_first = U.panel_tabs_organizer_flags & USER_PANEL_TABS_FAVORITES_FIRST;
++  const bool group_headers = U.panel_tabs_organizer_flags & USER_PANEL_TABS_GROUP_HEADERS;
++  const eUserPanelTabsSortMode sort_mode = U.panel_tabs_sort_mode;
++  std::stable_sort(items.begin(), items.end(), [&](const auto &a, const auto &b) {
++    if (favorites_first && a.favorite != b.favorite) {
++      return a.favorite;
++    }
++    if (group_headers && a.group != b.group) {
++      if (a.group.empty() != b.group.empty()) {
++        return !a.group.empty();
++      }
++      return BLI_strcasecmp_natural(a.group.c_str(), b.group.c_str()) < 0;
++    }
++    if (sort_mode == USER_PANEL_TABS_SORT_ALPHABETICAL) {
++      return BLI_strcasecmp_natural(a.label.c_str(), b.label.c_str()) < 0;
++    }
++    if (sort_mode == USER_PANEL_TABS_SORT_CUSTOM) {
++      if ((a.custom_order >= 0) != (b.custom_order >= 0)) {
++        return a.custom_order >= 0;
++      }
++      if (a.custom_order >= 0 && a.custom_order != b.custom_order) {
++        return a.custom_order < b.custom_order;
++      }
++    }
++    return a.native_index < b.native_index;
++  });
++  return items;
++}
++
++float panel_category_tabs_width(const ARegion *region)
++{
++  if ((U.flag & USER_FLAG_PANEL_TABS_HORIZONTAL_TEXT) == 0) {
++    return UI_PANEL_CATEGORY_MARGIN_WIDTH;
++  }
++
++  const bool fixed = U.panel_tabs_width_mode == USER_PANEL_TABS_WIDTH_FIXED;
++  float width;
++  float max_width;
++
++  if (fixed) {
++    const float fixed_width = U.panel_tabs_fixed_width > 0.0f ? U.panel_tabs_fixed_width : 8.0f;
++    width = std::clamp(fixed_width, 3.0f, 20.0f) * U.widget_unit;
++    max_width = width;
++  }
++  else {
++    const float min_width_units = U.panel_tabs_auto_min_width > 0.0f ?
++                                      U.panel_tabs_auto_min_width :
++                                      5.0f;
++    const float max_width_units = std::max(
++        min_width_units,
++        U.panel_tabs_auto_max_width > 0.0f ? U.panel_tabs_auto_max_width : 9.0f);
++    width = min_width_units * U.widget_unit;
++    max_width = max_width_units * U.widget_unit;
++  }
++
++  if (region && !fixed) {
++    const uiFontStyle *fstyle = &style_get()->widget;
++    for (const PanelCategoryViewItem &item : panel_category_view_items(region)) {
++      const float text_width = fontstyle_string_width(fstyle, item.label.c_str());
++      const float icon_width = (item.category->icon != ICON_NONE || item.color != 0) ? UI_UNIT_X :
++                                                                                     0.0f;
++      const float horizontal_padding = 0.75f * UI_UNIT_X;
++      width = std::max(width, text_width + icon_width + horizontal_padding);
++      if (!item.group.empty()) {
++        width = std::max(
++            width, fontstyle_string_width(fstyle, item.group.c_str()) + horizontal_padding);
++      }
++    }
++  }
++
++  width = std::min(width, max_width);
++  if (region && region->winx > 0) {
++    /* Preserve useful panel content even when an add-on has a very long category name. */
++    const float region_fraction = fixed ? 0.55f : 0.42f;
++    const float responsive_cap = std::max(3.5f * U.widget_unit, region->winx * region_fraction);
++    width = std::min(width, responsive_cap);
++  }
++  return width;
++}
++
++float panel_category_tabs_min_width(const ARegion *region)
++{
++  if ((U.flag & USER_FLAG_PANEL_TABS_HORIZONTAL_TEXT) == 0) {
++    return UI_PANEL_CATEGORY_MIN_WIDTH;
++  }
++  return panel_category_tabs_width(region) / UI_SCALE_FAC;
++}
++
+ static float panel_region_offset_x_get(const ARegion *region)
+ {
+   if (panel_category_tabs_is_visible(region)) {
+     if (RGN_ALIGN_ENUM_FROM_MASK(region->alignment) != RGN_ALIGN_RIGHT) {
+-      return UI_PANEL_CATEGORY_MARGIN_WIDTH;
++      return panel_category_tabs_width(region);
+     }
+   }
+ 
+@@ -1423,8 +1685,9 @@ static void expand_panel_region(bContext &C, ARegion *region)
+ {
+   const float aspect = BLI_rctf_size_y(&region->v2d.cur) /
+                        (BLI_rcti_size_y(&region->v2d.mask) + 1);
++  const float category_tabs_min_width = panel_category_tabs_min_width(region);
+   const bool too_narrow = BLI_rcti_size_x(&region->winrct) <=
+-                          int((UI_PANEL_CATEGORY_MIN_WIDTH + PANEL_MIN_DRAW_WIDTH) * UI_SCALE_FAC /
++                          int((category_tabs_min_width + PANEL_MIN_DRAW_WIDTH) * UI_SCALE_FAC /
+                               aspect);
+   if (!too_narrow) {
+     return;
+@@ -1432,7 +1695,7 @@ static void expand_panel_region(bContext &C, ARegion *region)
+   /* Enlarge region. */
+   int new_width = region->runtime->type->prefsizex ? region->runtime->type->prefsizex : 250;
+ 
+-  if (new_width < int(UI_PANEL_CATEGORY_MIN_WIDTH + PANEL_MIN_DRAW_WIDTH)) {
++  if (new_width < int(category_tabs_min_width + PANEL_MIN_DRAW_WIDTH)) {
+     region->runtime->type->prefsizex = UI_SIDEBAR_PANEL_WIDTH;
+     new_width = UI_SIDEBAR_PANEL_WIDTH;
+   }
+@@ -1469,9 +1732,9 @@ void panel_category_tabs_draw_all(const bContext *C,
+                        (BLI_rcti_size_y(&region->v2d.mask) + 1);
+   const float zoom = 1.0f / aspect;
+   const int px = U.pixelsize;
+-  const int category_tabs_width = std::round(UI_PANEL_CATEGORY_MARGIN_WIDTH * zoom);
++  const int category_tabs_width = std::round(panel_category_tabs_width(region) * zoom);
+   const float dpi_fac = UI_SCALE_FAC;
+-  /* Padding of tabs around text. */
++  /* Padding of vertical tabs around text. */
+   const int tab_v_pad_text = round_fl_to_int(TABS_PADDING_TEXT_FACTOR * dpi_fac * zoom) + 2 * px;
+   /* Padding between tabs. */
+   const int tab_v_pad = round_fl_to_int(TABS_PADDING_BETWEEN_FACTOR * dpi_fac * zoom);
+@@ -1519,8 +1782,9 @@ void panel_category_tabs_draw_all(const bContext *C,
+     immUnbindProgram();
+   }
+   /* If the area is too small to show panels, then don't show any tabs as active. */
++  const float category_tabs_min_width = panel_category_tabs_min_width(region);
+   const bool too_narrow = BLI_rcti_size_x(&region->winrct) <
+-                          int((UI_PANEL_CATEGORY_MIN_WIDTH + PANEL_MIN_DRAW_WIDTH) * UI_SCALE_FAC /
++                          int((category_tabs_min_width + PANEL_MIN_DRAW_WIDTH) * UI_SCALE_FAC /
+                               aspect);
+   /* #widget_roundbox_set has this correction, keep in sync. */
+   const int align_pad = (!region->overlap && !is_left) ? px : 0;
+@@ -1547,7 +1811,24 @@ void panel_category_tabs_draw_all(const bContext *C,
+ 
+   uiDefBut(block, ButtonType::Sepr, "", 0, 0, w, tab_v_pad, nullptr, 0.0, 0.0, "");
+ 
++  const bool readable = U.flag & USER_FLAG_PANEL_TABS_HORIZONTAL_TEXT;
+   const bool compact = U.uiflag2 & USER_UIFLAG2_PANEL_TABS_COMPACT;
++  if (readable && (U.panel_tabs_organizer_flags & USER_PANEL_TABS_SHOW_SEARCH)) {
++    PointerRNA prefs_ptr = RNA_pointer_create_discrete(nullptr, RNA_PreferencesSystem, &U);
++    col.prop(&prefs_ptr, "panel_tabs_filter", UI_ITEM_NONE, "", ICON_VIEWZOOM);
++    uiDefBut(block,
++             ButtonType::Sepr,
++             "",
++             0,
++             0,
++             w,
++             round_fl_to_int(UI_UNIT_Y * 0.22f * zoom),
++             nullptr,
++             0.0,
++             0.0,
++             "");
++  }
++  const std::vector<PanelCategoryViewItem> view_items = panel_category_view_items(region, readable);
+ 
+   /* Check the region type supports categories to avoid an assert
+    * for showing 3D view panels in the properties space. */
+@@ -1561,54 +1842,141 @@ void panel_category_tabs_draw_all(const bContext *C,
+   PointerRNA ptr = RNA_pointer_create_discrete(
+       reinterpret_cast<ID *>(CTX_wm_screen(C)), RNA_Region, region);
+   PropertyRNA *prop = RNA_struct_find_property(&ptr, "active_panel_category");
+-  for (auto [i, pc_dyn] : region->runtime->panels_category.enumerate()) {
++  std::string current_group;
++  for (size_t view_index = 0; view_index < view_items.size(); view_index++) {
++    const PanelCategoryViewItem &item = view_items[view_index];
++    PanelCategoryDyn &pc_dyn = *item.category;
++    const int i = item.native_index;
+     Button *button = nullptr;
+     const char *category_id = pc_dyn.idname;
+-    const char *category_id_draw = IFACE_(category_id);
+-    const int category_width = round_fl_to_int(
+-        compact ? 0 : BLF_width(fontid, category_id_draw, BLF_DRAW_STR_DUMMY_MAX));
+-
+-    const int h = compact ? w + align_pad : category_width + tab_v_pad_text * 2;
++    const char *category_id_draw = readable ? item.label.c_str() : IFACE_(category_id);
++    const bool is_active = STREQ(category_id, category_id_active);
++    if (readable) {
++      const bool show_group_headers = U.panel_tabs_organizer_flags &
++                                      USER_PANEL_TABS_GROUP_HEADERS;
++      const std::string collapsed_group_key = "@group:" + item.group;
++      const bool group_collapsed = show_group_headers && !item.group.empty() &&
++                                   panel_category_list_contains(U.panel_tabs_hidden,
++                                                                collapsed_group_key);
++      if (show_group_headers && !item.group.empty() && item.group != current_group) {
++        if (!current_group.empty()) {
++          uiDefBut(block,
++                   ButtonType::Sepr,
++                   "",
++                   0,
++                   0,
++                   w,
++                   round_fl_to_int(UI_UNIT_Y * 0.28f * zoom),
++                   nullptr,
++                   0.0,
++                   0.0,
++                   "");
++        }
++        const int group_h = round_fl_to_int(UI_UNIT_Y * 0.76f * zoom);
++        const int icon = group_collapsed ? ICON_DISCLOSURE_TRI_RIGHT : ICON_DISCLOSURE_TRI_DOWN;
++        Button *group_button = uiDefIconTextBut(block,
++                                                ButtonType::But,
++                                                icon,
++                                                item.group,
++                                                0,
++                                                0,
++                                                w,
++                                                group_h,
++                                                nullptr,
++                                                TIP_("Collapse or expand this category group"));
++        group_button->drawflag |= BUT_TEXT_LEFT | BUT_ICON_LEFT;
++        button_func_set(group_button, [group = item.group](bContext & /*C*/) {
++          const std::string collapsed_group_key = "@group:" + group;
++          panel_category_list_toggle(
++              U.panel_tabs_hidden, sizeof(U.panel_tabs_hidden), collapsed_group_key);
++          WM_main_add_notifier(NC_WINDOW, nullptr);
++        });
++        uiDefBut(block,
++                 ButtonType::Sepr,
++                 "",
++                 0,
++                 0,
++                 w,
++                 round_fl_to_int(UI_UNIT_Y * 0.12f * zoom),
++                 nullptr,
++                 0.0,
++                 0.0,
++                 "");
++        current_group = item.group;
++      }
++      if (group_collapsed && !is_active) {
++        continue;
++      }
+ 
+-    if (compact && pc_dyn.icon != ICON_NONE) {
+-      button = uiDefIconButR_prop(
+-          block, ButtonType::Tab, pc_dyn.icon, 0, 0, w, h, &ptr, prop, -1, 0, i, nullptr);
++      const float row_scale = U.panel_tabs_row_scale > 0.0f ? U.panel_tabs_row_scale : 1.0f;
++      const int h = round_fl_to_int(UI_UNIT_Y * std::clamp(row_scale, 0.65f, 1.6f) * zoom);
++      int icon = pc_dyn.icon;
++      if ((U.panel_tabs_organizer_flags & USER_PANEL_TABS_COLOR_TAGS) && item.color > 0) {
++        icon = ICON_COLLECTION_COLOR_01 + item.color - 1;
++      }
++      button = uiDefIconTextButR_prop(block,
++                                      ButtonType::Tab,
++                                      icon,
++                                      category_id_draw,
++                                      0,
++                                      0,
++                                      w,
++                                      h,
++                                      &ptr,
++                                      prop,
++                                      -1,
++                                      0,
++                                      i,
++                                      nullptr);
++      button->text_direction = TextDirection::Default;
++      button->drawflag |= BUT_TEXT_LEFT | BUT_ICON_LEFT;
+     }
+     else {
+-      std::string title = category_id_draw;
+-      if (compact) {
+-        size_t category_draw_len = BLF_DRAW_STR_DUMMY_MAX;
+-
+-        int char_offset1 = BLI_str_utf8_offset_from_index(category_id_draw, category_draw_len, 1);
+-        if (char_offset1 > 2) {
+-          /* Only a single complex character, symbol, or emoji. */
+-          title = std::string(category_id_draw, char_offset1);
+-        }
+-        else {
+-          int char_offset2 = BLI_str_utf8_offset_from_index(
+-              category_id_draw, category_draw_len, 2);
+-          char *space = BLI_strcasestr(category_id_draw, " ");
+-          if (char_offset2 == 2 && isupper(category_id_draw[1])) {
+-            /* First two characters are Latin with second uppercase. */
+-            title = std::string(category_id_draw, char_offset2);
+-          }
+-          else if (space && category_draw_len > (space - category_id_draw)) {
+-            /* First characters from each of the first two words. */
+-            title = std::string(category_id_draw, char_offset1) + std::string(space + 1, 1);
++      const int category_width = round_fl_to_int(
++          compact ? 0 : BLF_width(fontid, category_id_draw, BLF_DRAW_STR_DUMMY_MAX));
++      const int h = compact ? w + align_pad : category_width + tab_v_pad_text * 2;
++
++      if (compact && pc_dyn.icon != ICON_NONE) {
++        button = uiDefIconButR_prop(
++            block, ButtonType::Tab, pc_dyn.icon, 0, 0, w, h, &ptr, prop, -1, 0, i, nullptr);
++      }
++      else {
++        std::string title = category_id_draw;
++        if (compact) {
++          size_t category_draw_len = BLF_DRAW_STR_DUMMY_MAX;
++
++          int char_offset1 = BLI_str_utf8_offset_from_index(
++              category_id_draw, category_draw_len, 1);
++          if (char_offset1 > 2) {
++            /* Only a single complex character, symbol, or emoji. */
++            title = std::string(category_id_draw, char_offset1);
+           }
+           else {
+-            /* First two characters of a single word. */
+-            title = std::string(category_id_draw, char_offset2);
++            int char_offset2 = BLI_str_utf8_offset_from_index(
++                category_id_draw, category_draw_len, 2);
++            char *space = BLI_strcasestr(category_id_draw, " ");
++            if (char_offset2 == 2 && isupper(category_id_draw[1])) {
++              /* First two characters are Latin with second uppercase. */
++              title = std::string(category_id_draw, char_offset2);
++            }
++            else if (space && category_draw_len > (space - category_id_draw)) {
++              /* First characters from each of the first two words. */
++              title = std::string(category_id_draw, char_offset1) + std::string(space + 1, 1);
++            }
++            else {
++              /* First two characters of a single word. */
++              title = std::string(category_id_draw, char_offset2);
++            }
+           }
+         }
++        button = uiDefIconTextButR_prop(
++            block, ButtonType::Tab, ICON_NONE, title, 0, 0, w, h, &ptr, prop, -1, 0, i, nullptr);
++        button->text_direction = compact ? TextDirection::Default :
++                                           (is_left ? TextDirection::Up : TextDirection::Down);
+       }
+-      button = uiDefIconTextButR_prop(
+-          block, ButtonType::Tab, ICON_NONE, title, 0, 0, w, h, &ptr, prop, -1, 0, i, nullptr);
+-      button->text_direction = compact ? TextDirection::Default :
+-                                         (is_left ? TextDirection::Up : TextDirection::Down);
+     }
+     button->flag |= ui::BUT_DRAG_LOCK_X;
+-    if (compact) {
++    if (compact || readable) {
+       button_func_quick_tooltip_set(
+           button, [category = std::string(category_id)](const blender::ui::Button * /*but*/) {
+             return TIP_(category);
+@@ -1634,7 +2002,7 @@ void panel_category_tabs_draw_all(const bContext *C,
+         [category = std::string(category_id),
+          active = std::string(category_id_active),
+          too_narrow](const Button &) -> bool { return category == active && !too_narrow; });
+-    if (pc_dyn.next) {
++    if (view_index + 1 < view_items.size()) {
+       uiDefBut(block, ButtonType::Sepr, "", 0, 0, w, tab_v_pad, nullptr, 0.0, 0.0, "");
+     }
+   }
+@@ -1649,7 +2017,7 @@ void panel_category_tabs_draw_all(const bContext *C,
+ 
+   block_translate(block, 0, region->category_scroll);
+ 
+-  /* Align buttons the panel content when region overlap is disabled. */
++  /* Align buttons with the panel content when region overlap is disabled. */
+   if (!is_alpha) {
+     for (Button &button : block->buttons()) {
+       button.drawflag |= is_left ? BUT_ALIGN_RIGHT : BUT_ALIGN_LEFT;
+@@ -2509,7 +2877,7 @@ static bool panel_categories_tab_is_mouse_over(ARegion *region, const wmEvent *e
+   const float aspect = BLI_rctf_size_y(&region->v2d.cur) /
+                        (BLI_rcti_size_y(&region->v2d.mask) + 1);
+   const float zoom = 1.0f / aspect;
+-  const int category_tabs_width = round_fl_to_int(UI_PANEL_CATEGORY_MARGIN_WIDTH * zoom);
++  const int category_tabs_width = round_fl_to_int(panel_category_tabs_width(region) * zoom);
+   const bool is_left = RGN_ALIGN_ENUM_FROM_MASK(region->alignment) != RGN_ALIGN_RIGHT;
+ 
+   const View2D *v2d = &region->v2d;
+@@ -2632,10 +3000,10 @@ int handler_panel_region(bContext *C,
+       if (active_button && active_button->hardmax == val) {
+         const float aspect = BLI_rctf_size_y(&region->v2d.cur) /
+                              (BLI_rcti_size_y(&region->v2d.mask) + 1);
++        const float category_tabs_min_width = panel_category_tabs_min_width(region);
+         const bool too_narrow = BLI_rcti_size_x(&region->winrct) <
+-                                int(std::floor(
+-                                    (UI_PANEL_CATEGORY_MIN_WIDTH + PANEL_MIN_DRAW_WIDTH) *
+-                                    UI_SCALE_FAC / aspect));
++                                int(std::floor((category_tabs_min_width + PANEL_MIN_DRAW_WIDTH) *
++                                               UI_SCALE_FAC / aspect));
+         if (too_narrow) {
+           expand_panel_region(*C, region);
+         }
+@@ -2643,7 +3011,7 @@ int handler_panel_region(bContext *C,
+           /* Minimize region. */
+           region->runtime->type->prefsizex = int(float(BLI_rcti_size_x(&region->winrct) + 1) /
+                                                  UI_SCALE_FAC * aspect);
+-          panel_region_width_set(region, aspect, UI_PANEL_CATEGORY_MIN_WIDTH);
++          panel_region_width_set(region, aspect, category_tabs_min_width);
+           WM_event_add_notifier(C, NC_SCREEN | NA_EDITED, nullptr);
+           ED_region_tag_redraw(region);
+           /* Reset scroll to the top (#38348). */
+diff --git a/source/blender/editors/screen/area.cc b/source/blender/editors/screen/area.cc
+index da9e1d1f..434ae217 100644
+--- a/source/blender/editors/screen/area.cc
++++ b/source/blender/editors/screen/area.cc
+@@ -1812,7 +1812,7 @@ static void region_rect_recursive(
+       }
+       else if (has_tabs) {
+         /* Too narrow for content so show only the category tabs. */
+-        const int cat_min = int(UI_PANEL_CATEGORY_MIN_WIDTH * UI_SCALE_FAC / aspect);
++        const int cat_min = int(ui::panel_category_tabs_min_width(region) * UI_SCALE_FAC / aspect);
+         region->winrct = *winrct;
+         if (alignment == RGN_ALIGN_RIGHT) {
+           region->winrct.xmin = region->winrct.xmax - cat_min + 1;
+@@ -1828,15 +1828,16 @@ static void region_rect_recursive(
+     }
+     else {
+       if (BKE_regiontype_uses_category_tabs(region->runtime->type)) {
+-        /* Update category tab width when #USER_UIFLAG2_PANEL_TABS_COMPACT flag is set/unset. */
++        /* Update category-tab width when its display preference changes. */
+         const float aspect = (region->v2d.flag & V2D_IS_INIT) ?
+                                  (BLI_rctf_size_y(&region->v2d.cur) /
+                                   (BLI_rcti_size_y(&region->v2d.mask) + 1)) :
+                                  1.0f;
+-        const int tab_auto_snap_width = (UI_PANEL_CATEGORY_MIN_WIDTH + ui::PANEL_MIN_DRAW_WIDTH) *
++        const float category_tabs_min_width = ui::panel_category_tabs_min_width(region);
++        const int tab_auto_snap_width = (category_tabs_min_width + ui::PANEL_MIN_DRAW_WIDTH) *
+                                         UI_SCALE_FAC / aspect;
+         if (prefsizex < tab_auto_snap_width) {
+-          prefsizex = UI_PANEL_CATEGORY_MIN_WIDTH * UI_SCALE_FAC / aspect;
++          prefsizex = category_tabs_min_width * UI_SCALE_FAC / aspect;
+         }
+       }
+       int fac = rct_fits(winrct, SCREEN_AXIS_H, prefsizex);
+@@ -3398,7 +3399,6 @@ void ED_region_panels_layout_ex(const bContext *C,
+                            BKE_regiontype_uses_category_tabs(region->runtime->type);
+   /* offset panels for small vertical tab area */
+   const char *category = nullptr;
+-  const int category_tabs_width = UI_PANEL_CATEGORY_MARGIN_WIDTH;
+   int margin_x = 0;
+   const bool region_layout_based = region->flag & RGN_FLAG_DYNAMIC_SIZE;
+   bool update_tot_size = true;
+@@ -3425,7 +3425,7 @@ void ED_region_panels_layout_ex(const bContext *C,
+     }
+   }
+   if (use_category_tabs) {
+-    margin_x = category_tabs_width;
++    margin_x = round_fl_to_int(ui::panel_category_tabs_width(region));
+   }
+ 
+   const int max_panel_width = round_fl_to_int(BLI_rctf_size_x(&v2d->cur)) - margin_x;
+@@ -3697,10 +3697,10 @@ void ED_region_panels_draw(const bContext *C, ARegion *region)
+ 
+   /* draw panels if they are large enough. */
+   const bool has_category_tabs = ui::panel_category_tabs_is_visible(region);
+-  const short min_draw_size = has_category_tabs ?
+-                                  short(UI_PANEL_CATEGORY_MIN_WIDTH + ui::PANEL_MIN_DRAW_WIDTH) :
+-                                  std::min(region->runtime->type->prefsizex,
+-                                           ui::PANEL_MIN_DRAW_WIDTH);
++  const short min_draw_size = has_category_tabs ? short(ui::panel_category_tabs_min_width(region) +
++                                                        ui::PANEL_MIN_DRAW_WIDTH) :
++                                                  std::min(region->runtime->type->prefsizex,
++                                                           ui::PANEL_MIN_DRAW_WIDTH);
+   if (region->winx >= (min_draw_size * UI_SCALE_FAC / aspect)) {
+     ui::panels_draw(C, region);
+   }
+@@ -3723,7 +3723,7 @@ void ED_region_panels_draw(const bContext *C, ARegion *region)
+     use_mask = true;
+     ui::view2d_mask_from_win(v2d, &mask);
+     const int category_width = round_fl_to_int(ui::view2d_scale_get_x(&region->v2d) *
+-                                               UI_PANEL_CATEGORY_MARGIN_WIDTH);
++                                               ui::panel_category_tabs_width(region));
+     if (alignment == RGN_ALIGN_RIGHT) {
+       mask.xmax -= category_width;
+     }
+diff --git a/source/blender/editors/screen/area_query.cc b/source/blender/editors/screen/area_query.cc
+index 0c135fec..a736d4db 100644
+--- a/source/blender/editors/screen/area_query.cc
++++ b/source/blender/editors/screen/area_query.cc
+@@ -75,7 +75,7 @@ bool ED_region_panel_category_gutter_calc_rect(const ARegion *region, rcti *r_re
+   *r_region_gutter = region->winrct;
+   if (ui::panel_category_tabs_is_visible(region)) {
+     const int category_tabs_width = round_fl_to_int(ui::view2d_scale_get_x(&region->v2d) *
+-                                                    UI_PANEL_CATEGORY_MARGIN_WIDTH);
++                                                    ui::panel_category_tabs_width(region));
+     const int alignment = RGN_ALIGN_ENUM_FROM_MASK(region->alignment);
+ 
+     if (alignment == RGN_ALIGN_LEFT) {
+diff --git a/source/blender/editors/screen/area_utils.cc b/source/blender/editors/screen/area_utils.cc
+index e09a3666..5ae9026c 100644
+--- a/source/blender/editors/screen/area_utils.cc
++++ b/source/blender/editors/screen/area_utils.cc
+@@ -80,7 +80,7 @@ int ED_region_generic_panel_region_snap_size(const ARegion *region, int size, in
+     /* Using Y axis avoids slight feedback loop when adjusting X. */
+     const float aspect = BLI_rctf_size_y(&region->v2d.cur) /
+                          (BLI_rcti_size_y(&region->v2d.mask) + 1);
+-    return int(UI_PANEL_CATEGORY_MIN_WIDTH / aspect);
++    return int(ui::panel_category_tabs_min_width(region) / aspect);
+   }
+   return size;
+ }
+diff --git a/source/blender/editors/screen/screen_ops.cc b/source/blender/editors/screen/screen_ops.cc
+index 7ba21e01..c8bd3d1d 100644
+--- a/source/blender/editors/screen/screen_ops.cc
++++ b/source/blender/editors/screen/screen_ops.cc
+@@ -3506,7 +3506,8 @@ static wmOperatorStatus region_scale_modal(bContext *C, wmOperator *op, const wm
+         }
+         BLI_assert(rmd->region->sizex <= rmd->maxsize);
+         const int collapse_size = BKE_regiontype_uses_category_tabs(rmd->region->runtime->type) ?
+-                                      (UI_PANEL_CATEGORY_MIN_WIDTH / aspect_x) * 0.75f :
++                                      (ui::panel_category_tabs_min_width(rmd->region) / aspect_x) *
++                                          0.75f :
+                                       UI_UNIT_X / aspect_x;
+         if (size_no_snap < collapse_size) {
+           rmd->region->sizex = rmd->origval;
+@@ -3618,7 +3619,7 @@ static wmOperatorStatus region_scale_modal(bContext *C, wmOperator *op, const wm
+                                  (BLI_rctf_size_x(&rmd->region->v2d.cur) /
+                                   (BLI_rcti_size_x(&rmd->region->v2d.mask) + 1)) :
+                                  1.0f;
+-        if (float(rmd->region->sizex) * aspect > UI_PANEL_CATEGORY_MIN_WIDTH) {
++        if (float(rmd->region->sizex) * aspect > ui::panel_category_tabs_min_width(rmd->region)) {
+           /* Save this as new runtime preferred size. */
+           rmd->region->runtime->type->prefsizex = int(float(rmd->region->sizex) * aspect);
+         }
+diff --git a/source/blender/makesdna/DNA_userdef_types.h b/source/blender/makesdna/DNA_userdef_types.h
+index 825c7ae9..32370cd2 100644
+--- a/source/blender/makesdna/DNA_userdef_types.h
++++ b/source/blender/makesdna/DNA_userdef_types.h
+@@ -34,7 +34,7 @@ enum eUserPref_Flag : int {
+   USER_FLAG_NUMINPUT_ADVANCED = (1 << 1),
+   USER_FLAG_RECENT_SEARCHES_DISABLE = (1 << 2),
+   USER_MENU_CLOSE_LEAVE = (1 << 3),
+-  USER_FLAG_UNUSED_4 = (1 << 4), /* cleared */
++  USER_FLAG_PANEL_TABS_HORIZONTAL_TEXT = (1 << 4),
+   USER_TRACKBALL = (1 << 5),
+   USER_FLAG_UNUSED_6 = (1 << 6), /* cleared */
+   USER_FLAG_UNUSED_7 = (1 << 7), /* cleared */
+@@ -62,6 +62,28 @@ enum eUserPref_Flag : int {
+ };
+ ENUM_OPERATORS(eUserPref_Flag)
+ 
++/** #UserDef.panel_tabs_width_mode */
++enum eUserPanelTabsWidthMode : short {
++  USER_PANEL_TABS_WIDTH_AUTO = 0,
++  USER_PANEL_TABS_WIDTH_FIXED = 1,
++};
++
++/** #UserDef.panel_tabs_sort_mode */
++enum eUserPanelTabsSortMode : short {
++  USER_PANEL_TABS_SORT_NATIVE = 0,
++  USER_PANEL_TABS_SORT_ALPHABETICAL = 1,
++  USER_PANEL_TABS_SORT_CUSTOM = 2,
++};
++
++/** #UserDef.panel_tabs_organizer_flags */
++enum eUserPanelTabsOrganizerFlag : int {
++  USER_PANEL_TABS_FAVORITES_FIRST = (1 << 0),
++  USER_PANEL_TABS_GROUP_HEADERS = (1 << 1),
++  USER_PANEL_TABS_COLOR_TAGS = (1 << 2),
++  USER_PANEL_TABS_SHOW_SEARCH = (1 << 3),
++};
++ENUM_OPERATORS(eUserPanelTabsOrganizerFlag)
++
+ /** #UserDef.asset_flag */
+ enum eUserPref_AssetFlag : char {
+   USER_ASSETS_USE_ONLINE_ESSENTIALS = 1 << 0,
+@@ -1038,6 +1060,27 @@ struct UserDef {
+   /** Startup application template. */
+   char app_template[64] = "";
+ 
++  /** Experimental organizer settings for readable sidebar category labels. */
++  eUserPanelTabsWidthMode panel_tabs_width_mode = USER_PANEL_TABS_WIDTH_AUTO;
++  eUserPanelTabsSortMode panel_tabs_sort_mode = USER_PANEL_TABS_SORT_NATIVE;
++  eUserPanelTabsOrganizerFlag panel_tabs_organizer_flags = USER_PANEL_TABS_FAVORITES_FIRST |
++                                                          USER_PANEL_TABS_GROUP_HEADERS |
++                                                          USER_PANEL_TABS_COLOR_TAGS;
++  float panel_tabs_fixed_width = 8.0f;
++  float panel_tabs_auto_min_width = 5.0f;
++  float panel_tabs_auto_max_width = 12.0f;
++  float panel_tabs_row_scale = 1.0f;
++  /** Semicolon-separated category identifiers. */
++  char panel_tabs_favorites[1024] = "";
++  char panel_tabs_hidden[1024] = "";
++  char panel_tabs_custom_order[2048] = "";
++  /** Semicolon-separated `category=value` entries. */
++  char panel_tabs_aliases[2048] = "";
++  char panel_tabs_groups[2048] = "";
++  char panel_tabs_colors[2048] = "";
++  /** Live case-insensitive filter applied to identifier, alias, and group. */
++  char panel_tabs_filter[256] = "";
++
+   /**
+    * A list of themes (#bTheme), the first is only used currently.
+    * But there may be multiple themes in the list.
+diff --git a/source/blender/makesrna/intern/rna_space.cc b/source/blender/makesrna/intern/rna_space.cc
+index 2e23387e..259f53d5 100644
+--- a/source/blender/makesrna/intern/rna_space.cc
++++ b/source/blender/makesrna/intern/rna_space.cc
+@@ -1085,7 +1085,7 @@ static void rna_Space_show_region_ui_set(PointerRNA *ptr, bool value)
+                               (BLI_rcti_size_x(&region->v2d.mask) + 1)) :
+                              1.0f;
+     if (region->runtime->type && BKE_regiontype_uses_category_tabs(region->runtime->type) &&
+-        (float(region->sizex) <= (UI_PANEL_CATEGORY_MIN_WIDTH / aspect)))
++        (float(region->sizex) <= (blender::ui::panel_category_tabs_min_width(region) / aspect)))
+     {
+       /* If the region is showing only tabs, increase to full width. */
+       const int new_width = region->runtime->type->prefsizex ? region->runtime->type->prefsizex :
+diff --git a/source/blender/makesrna/intern/rna_userdef.cc b/source/blender/makesrna/intern/rna_userdef.cc
+index 43938da4..c044f56a 100644
+--- a/source/blender/makesrna/intern/rna_userdef.cc
++++ b/source/blender/makesrna/intern/rna_userdef.cc
+@@ -326,7 +326,7 @@ static void rna_userdef_update(Main * /*bmain*/, Scene * /*scene*/, PointerRNA *
+   USERDEF_TAG_DIRTY;
+ }
+ 
+-static void rna_userdef_update_compact_tabs(Main *bmain, Scene *scene, PointerRNA *ptr)
++static void rna_userdef_update_panel_tabs(Main *bmain, Scene *scene, PointerRNA *ptr)
+ {
+   rna_userdef_update(bmain, scene, ptr);
+   auto *wm = static_cast<wmWindowManager *>(bmain->wm.first);
+@@ -334,7 +334,7 @@ static void rna_userdef_update_compact_tabs(Main *bmain, Scene *scene, PointerRN
+     return;
+   }
+   for (wmWindow &win : wm->windows) {
+-    /* Notify regions so they can update its category tab width when showing only tabs. */
++    /* Notify regions so they can update their category-tab width when showing only tabs. */
+     WM_event_add_notifier_ex(wm, &win, NC_SCREEN | NA_EDITED, nullptr);
+   }
+ }
+@@ -6079,6 +6079,38 @@ static void rna_def_userdef_system(BlenderRNA *brna)
+   PropertyRNA *prop;
+   StructRNA *srna;
+ 
++  static const EnumPropertyItem panel_tabs_width_mode_items[] = {
++      {USER_PANEL_TABS_WIDTH_AUTO,
++       "AUTO",
++       0,
++       "Automatic",
++       "Fit the gutter to the longest visible category label"},
++      {USER_PANEL_TABS_WIDTH_FIXED,
++       "FIXED",
++       0,
++       "Fixed",
++       "Use a user-defined gutter width"},
++      {0, nullptr, 0, nullptr, nullptr},
++  };
++  static const EnumPropertyItem panel_tabs_sort_mode_items[] = {
++      {USER_PANEL_TABS_SORT_NATIVE,
++       "NATIVE",
++       0,
++       "Blender Order",
++       "Keep categories in their native registration order"},
++      {USER_PANEL_TABS_SORT_ALPHABETICAL,
++       "ALPHABETICAL",
++       0,
++       "Alphabetical",
++       "Sort categories by their visible labels"},
++      {USER_PANEL_TABS_SORT_CUSTOM,
++       "CUSTOM",
++       0,
++       "Custom",
++       "Use the order from the custom category list"},
++      {0, nullptr, 0, nullptr, nullptr},
++  };
++
+   static const EnumPropertyItem gl_texture_clamp_items[] = {
+       {0, "CLAMP_OFF", 0, "Off", ""},
+       {8192, "CLAMP_8192", 0, "8192", ""},
+@@ -6276,7 +6308,117 @@ static void rna_def_userdef_system(BlenderRNA *brna)
+       prop,
+       "Compact Sidebar Tabs",
+       "Display sidebar tabs in a compact size that shows icons when available");
+-  RNA_def_property_update(prop, 0, "rna_userdef_update_compact_tabs");
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs");
++
++  prop = RNA_def_property(srna, "show_panel_tabs_horizontal_text", PROP_BOOLEAN, PROP_NONE);
++  RNA_def_property_boolean_sdna(prop, nullptr, "flag", USER_FLAG_PANEL_TABS_HORIZONTAL_TEXT);
++  RNA_def_property_ui_text(prop,
++                           "Readable Sidebar Tabs",
++                           "Use horizontal labels in the vertical sidebar list");
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs");
++
++  prop = RNA_def_property(srna, "panel_tabs_width_mode", PROP_ENUM, PROP_NONE);
++  RNA_def_property_enum_sdna(prop, nullptr, "panel_tabs_width_mode");
++  RNA_def_property_enum_items(prop, panel_tabs_width_mode_items);
++  RNA_def_property_ui_text(prop, "Width", "How readable sidebar tab width is calculated");
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs");
++
++  prop = RNA_def_property(srna, "panel_tabs_fixed_width", PROP_FLOAT, PROP_NONE);
++  RNA_def_property_float_sdna(prop, nullptr, "panel_tabs_fixed_width");
++  RNA_def_property_range(prop, 3.0f, 20.0f);
++  RNA_def_property_ui_range(prop, 3.0f, 20.0f, 0.25f, 2);
++  RNA_def_property_ui_text(prop, "Fixed Width", "Readable gutter width in UI units");
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs");
++
++  prop = RNA_def_property(srna, "panel_tabs_auto_min_width", PROP_FLOAT, PROP_NONE);
++  RNA_def_property_float_sdna(prop, nullptr, "panel_tabs_auto_min_width");
++  RNA_def_property_range(prop, 3.0f, 20.0f);
++  RNA_def_property_ui_range(prop, 3.0f, 20.0f, 0.25f, 2);
++  RNA_def_property_ui_text(prop, "Minimum Width", "Minimum automatic gutter width in UI units");
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs");
++
++  prop = RNA_def_property(srna, "panel_tabs_auto_max_width", PROP_FLOAT, PROP_NONE);
++  RNA_def_property_float_sdna(prop, nullptr, "panel_tabs_auto_max_width");
++  RNA_def_property_range(prop, 3.0f, 20.0f);
++  RNA_def_property_ui_range(prop, 3.0f, 20.0f, 0.25f, 2);
++  RNA_def_property_ui_text(prop, "Maximum Width", "Maximum automatic gutter width in UI units");
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs");
++
++  prop = RNA_def_property(srna, "panel_tabs_row_scale", PROP_FLOAT, PROP_FACTOR);
++  RNA_def_property_float_sdna(prop, nullptr, "panel_tabs_row_scale");
++  RNA_def_property_range(prop, 0.65f, 1.6f);
++  RNA_def_property_ui_range(prop, 0.65f, 1.6f, 0.05f, 2);
++  RNA_def_property_ui_text(prop, "Row Height", "Vertical size of readable category rows");
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs");
++
++  prop = RNA_def_property(srna, "panel_tabs_sort_mode", PROP_ENUM, PROP_NONE);
++  RNA_def_property_enum_sdna(prop, nullptr, "panel_tabs_sort_mode");
++  RNA_def_property_enum_items(prop, panel_tabs_sort_mode_items);
++  RNA_def_property_ui_text(prop, "Sort", "Category ordering for readable sidebar tabs");
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs");
++
++  prop = RNA_def_property(srna, "panel_tabs_favorites_first", PROP_BOOLEAN, PROP_NONE);
++  RNA_def_property_boolean_sdna(
++      prop, nullptr, "panel_tabs_organizer_flags", USER_PANEL_TABS_FAVORITES_FIRST);
++  RNA_def_property_ui_text(prop, "Favorites First", "Move favorite categories to the top");
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs");
++
++  prop = RNA_def_property(srna, "panel_tabs_group_headers", PROP_BOOLEAN, PROP_NONE);
++  RNA_def_property_boolean_sdna(
++      prop, nullptr, "panel_tabs_organizer_flags", USER_PANEL_TABS_GROUP_HEADERS);
++  RNA_def_property_ui_text(prop, "Group Headers", "Show named group separators");
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs");
++
++  prop = RNA_def_property(srna, "panel_tabs_color_tags", PROP_BOOLEAN, PROP_NONE);
++  RNA_def_property_boolean_sdna(
++      prop, nullptr, "panel_tabs_organizer_flags", USER_PANEL_TABS_COLOR_TAGS);
++  RNA_def_property_ui_text(prop, "Color Tags", "Show configured category color markers");
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs");
++
++  prop = RNA_def_property(srna, "panel_tabs_show_search", PROP_BOOLEAN, PROP_NONE);
++  RNA_def_property_boolean_sdna(
++      prop, nullptr, "panel_tabs_organizer_flags", USER_PANEL_TABS_SHOW_SEARCH);
++  RNA_def_property_ui_text(
++      prop, "Show Search Field", "Show a live category search field above readable sidebar tabs");
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs");
++
++#define PANEL_TABS_STRING_PROP(identifier, sdna, title, description) \
++  prop = RNA_def_property(srna, identifier, PROP_STRING, PROP_NONE); \
++  RNA_def_property_string_sdna(prop, nullptr, sdna); \
++  RNA_def_property_ui_text(prop, title, description); \
++  RNA_def_property_update(prop, 0, "rna_userdef_update_panel_tabs")
++
++  PANEL_TABS_STRING_PROP("panel_tabs_favorites",
++                         "panel_tabs_favorites",
++                         "Favorites",
++                         "Semicolon-separated category identifiers");
++  PANEL_TABS_STRING_PROP("panel_tabs_hidden",
++                         "panel_tabs_hidden",
++                         "Hidden",
++                         "Semicolon-separated hidden category identifiers");
++  PANEL_TABS_STRING_PROP("panel_tabs_custom_order",
++                         "panel_tabs_custom_order",
++                         "Custom Order",
++                         "Semicolon-separated category identifiers in preferred order");
++  PANEL_TABS_STRING_PROP("panel_tabs_aliases",
++                         "panel_tabs_aliases",
++                         "Aliases",
++                         "Semicolon-separated Category=Alias entries");
++  PANEL_TABS_STRING_PROP("panel_tabs_groups",
++                         "panel_tabs_groups",
++                         "Groups",
++                         "Semicolon-separated Category=Group entries");
++  PANEL_TABS_STRING_PROP("panel_tabs_colors",
++                         "panel_tabs_colors",
++                         "Colors",
++                         "Semicolon-separated Category=1..8 entries");
++  PANEL_TABS_STRING_PROP("panel_tabs_filter",
++                         "panel_tabs_filter",
++                         "Filter",
++                         "Show only matching identifiers, aliases, or groups");
++  RNA_def_property_flag(prop, PROP_TEXTEDIT_UPDATE);
++
++#undef PANEL_TABS_STRING_PROP
+ 
+   prop = RNA_def_property(srna, "viewport_aa", PROP_ENUM, PROP_NONE);
+   RNA_def_property_enum_items(prop, rna_enum_userdef_viewport_aa_items);
