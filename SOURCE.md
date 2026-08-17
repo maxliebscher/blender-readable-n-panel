@@ -16,6 +16,8 @@ The binary archive retains Blender's standard `license` directory, including not
 
 The patch is intentionally generated only from the 12 Blender source files involved in the readable-label and organizer implementation. Replaced local Git-LFS working files, build outputs, test profiles, and captured media are excluded from the source patch.
 
+GitHub's automatically generated **Source code** archives contain this project's documentation, media, and patch—not a complete Blender source checkout. Reconstruct the corresponding modified tree from the exact upstream commit and complete patch below.
+
 ## Reconstructing the source tree
 
 ```bash

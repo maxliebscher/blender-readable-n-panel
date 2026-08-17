@@ -6,7 +6,7 @@ An unofficial Blender experiment that keeps sidebar categories stacked verticall
 > **Experimental Blender 5.3 Alpha build. Do not use it for production work or irreplaceable files.** Crashes, bugs, preference corruption, compatibility problems, and data loss cannot be ruled out. Use copies, keep backups, and keep your normal Blender installation separate.
 
 <p align="center">
-  <img src="media/readable-labels-before-after.webp" width="960" alt="Blender default vertical category labels compared with optional readable horizontal labels">
+  <img src="media/readable-n-panel-hero.webp" width="960" alt="Blender default vertical category labels compared with the experimental readable N-panel organizer">
 </p>
 
 This repository documents two related tracks:
@@ -17,6 +17,8 @@ This repository documents two related tracks:
 ## Try the portable build
 
 [**Download Blender 5.3 Alpha — Experimental Sidebar Organizer v0.2 for Windows x64**](../../releases/tag/v0.2.0-experimental)
+
+[View all releases](../../releases)
 
 1. Download the ZIP and compare its SHA-256 checksum with [`CHECKSUMS-SHA256.txt`](CHECKSUMS-SHA256.txt).
 2. Extract it into a short local path such as `C:\BlenderSidebarTest`. Do not run it from inside the ZIP; deeply nested paths can exceed legacy Windows path limits.
@@ -88,6 +90,7 @@ Known boundaries:
 - No detachable category gutter.
 - No drag-and-drop manager yet; custom ordering is currently entered as identifier data.
 - No promised compatibility with third-party add-ons or future Blender builds.
+- The executable is unsigned; Windows SmartScreen or security software may warn or block it. Do not disable security software to run this experiment.
 - No Blender 5.1 installation or profile is modified by the provided portable workflow.
 
 Read [Safety and disclaimer](DISCLAIMER.md) before running the binary. The exact checks performed for this build are listed in [QA report](docs/QA.md).
