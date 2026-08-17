@@ -18,8 +18,6 @@ This repository documents two related tracks:
 
 [**Download Blender 5.3 Alpha — Experimental Sidebar Organizer v0.2 for Windows x64**](../../releases/tag/v0.2.0-experimental)
 
-[View all releases](../../releases)
-
 1. Download the ZIP and compare its SHA-256 checksum with [`CHECKSUMS-SHA256.txt`](CHECKSUMS-SHA256.txt).
 2. Extract it into a short local path such as `C:\BlenderSidebarTest`. Do not run it from inside the ZIP; deeply nested paths can exceed legacy Windows path limits.
 3. Start `blender-launcher.exe` from the extracted folder.
