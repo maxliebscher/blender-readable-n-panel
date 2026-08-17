@@ -29,12 +29,8 @@ The release ZIP is deliberately attached to a GitHub Release instead of being st
 ## Short walkthrough
 
 <p align="center">
-  <a href="media/sidebar-organizer-demo-clean.mp4">
-    <img src="media/sidebar-organizer-demo-preview.gif" width="800" alt="Short walkthrough of the reversible readable-label switch, organizer controls, grouped categories, and live search">
-  </a>
+  <img src="media/sidebar-organizer-demo-preview.gif" width="800" alt="Short walkthrough of the reversible readable-label switch, organizer controls, grouped categories, and live search">
 </p>
-
-[MP4 with captions](media/sidebar-organizer-demo-captioned.mp4) · [clean MP4](media/sidebar-organizer-demo-clean.mp4)
 
 ## What is implemented
 
