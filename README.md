@@ -91,7 +91,7 @@ Read [Safety and disclaimer](DISCLAIMER.md) before running the binary. The exact
 
 ## Source and reproducibility
 
-- Upstream project: <https://projects.blender.org/blender/blender>
+- Upstream project: <https://projects.blender.org/blender/blender/pulls/162701>
 - Exact upstream base: `4d6a448ec8e203a080b276c34ae73fb91078d088`
 - Readable-label reference commit: `6a37f824a4c8af813d987ebd1afaf1f4275df8f1`
 - Complete v0.2 patch: [`patches/blender-sidebar-organizer-v0.2-full.patch`](patches/blender-sidebar-organizer-v0.2-full.patch)
