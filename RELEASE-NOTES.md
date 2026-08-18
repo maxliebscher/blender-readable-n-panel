@@ -1,4 +1,4 @@
-# v0.2.0-experimental
+![Blender default vertical category labels compared with the experimental readable N-panel organizer](https://github.com/maxliebscher/blender-readable-n-panel/raw/main/media/readable-n-panel-hero.webp)
 
 ## Added
 
@@ -19,4 +19,3 @@
 ## Important
 
 This release is an unofficial Windows x64 test build based on Blender 5.3 Alpha. It is for evaluation only and must not be used on important files or in production.
-

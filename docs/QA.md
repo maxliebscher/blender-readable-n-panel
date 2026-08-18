@@ -27,9 +27,7 @@
 
 ## Publication media verification
 
-- The captioned MP4 walkthrough is 1,280 × 720, 30 fps, silent, and 17.33 seconds long.
-- It uses five short descriptive overlays; the animated README preview is derived from this version.
-- The GitHub preview GIF is 800 × 450 and approximately 2.1 MB.
+- The animated GitHub preview is 800 × 450, approximately 2.1 MB, and uses five short descriptive overlays.
 - Contact-sheet and full-size frame inspection confirmed that controls, grouped labels, and the filtered state remain legible.
 
 ## Real GUI user journey
