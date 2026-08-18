@@ -47,8 +47,8 @@ The release ZIP is deliberately attached to a GitHub Release instead of being st
 | Persistence | Organizer settings persist inside the portable profile |
 
 <p align="center">
-  <img src="media/sidebar-organizer-grouped-list.webp" width="500" alt="Grouped and color-tagged readable sidebar category list">
-  <img src="media/sidebar-organizer-live-search.webp" width="420"
+  <img src="media/sidebar-organizer-grouped-list.webp" width="400" alt="Grouped and color-tagged readable sidebar category list">
+  <img src="media/sidebar-organizer-live-search.webp" width="380"
 </p>
                                                                                                                                                      
 ## Where the controls are
